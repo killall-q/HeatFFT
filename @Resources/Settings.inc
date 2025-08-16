@@ -1,16 +1,17 @@
 [Variables]
-Heat=0.2
-Cool=0.03
-Sens=60
+Mode=1
+Heat=1
+Cool=0.07
+Sens=40
 Channel=Sum
-Bands=64
+Bands=60
 Order=0
-Width=600
-Height=400
+Width=240
+Height=40
 BarH=0
 BarG=0
-BlurW=3
-BlurH=3
+BlurW=1
+BlurH=1
 ShowSet=1
 
 Preset=Amber

@@ -1,5 +1,6 @@
 function Initialize()
   mFFT, FFTd, grad = {}, {}, {}
+  mode = SKIN:GetVariable('Mode') == '1'
   heat = tonumber(SKIN:GetVariable('Heat')) -- growth rate of FFT values
   cool = tonumber(SKIN:GetVariable('Cool')) -- decay rate of FFT values
   bands = tonumber(SKIN:GetVariable('Bands')) -- number of FFT bands
@@ -31,22 +32,25 @@ function Initialize()
     SKIN:Bang('!SetOption Render Shape'..(b ~= 1 and b or '')..' "Rectangle '..((barW + barG) * (b - 1))..',0,'..barW..',#Height#|Fill LinearGradient Grad'..b..'|Extend Attr"')
     grad[b] = '00000000;'..((barW + barG) * (b - 1) / width)..'|000000;'..(((barW + barG) * (b - 1) + blurW) / width)..'|000000;'..(((barW + barG) * b - barG - blurW) / width)..'|00000000;'..(((barW + barG) * b - barG) / width)
   end
-  SKIN:Bang('[!SetOption Mask Grad "0|'..table.concat(grad, '|')..'"][!SetOption HeatSlider X '..(heat * 200)..'r][!SetOption HeatVal Text '..(heat * 100)..'%][!SetOption CoolSlider X '..(cool * 200)..'r][!SetOption CoolVal Text '..(cool * 100)..'%][!SetOption BarHSlider X '..(barH * 2)..'r][!SetOption BarGSlider X '..(barG * 2)..'r][!SetOption BlurWSlider X '..(blurW * 2)..'r][!SetOption BlurHSlider X '..(tonumber(SKIN:GetVariable('BlurH')) * 2 - 2)..'r][!SetOption SensSlider X '..(tonumber(SKIN:GetVariable('Sens')) * 0.9)..'r]')
+  SKIN:Bang('[!SetOption Mask Grad "0|'..table.concat(grad, '|')..'"][!SetOption Mode'..(mode and 1 or 0)..' SolidColor FF0000][!SetOption Mode'..(mode and 1 or 0)..' MouseLeaveAction "!SetOption #*CURRENTSECTION*# SolidColor FF0000"][!SetOption HeatSlider X '..(heat * 100 - 2)..'r][!SetOption HeatVal Text '..(heat * 100)..'%][!SetOption CoolSlider X '..(cool * 200 - 2)..'r][!SetOption CoolVal Text '..(cool * 100)..'%][!SetOption BarHSlider X '..(barH * 2)..'r][!SetOption BarGSlider X '..(barG * 2)..'r][!SetOption BlurWSlider X '..(blurW * 2)..'r][!SetOption BlurHSlider X '..(tonumber(SKIN:GetVariable('BlurH')) * 2 - 2)..'r][!SetOption SensSlider X '..(tonumber(SKIN:GetVariable('Sens')) * 0.9)..'r]')
   Update()
 end
 
 function Update()
   for b = 1, bands do
-    local val = mFFT[b]:GetValue()
-    local dMin, dMax = math.floor(math.min(val, FFTd[b].prev + dGap) * (res - barH)), math.floor(math.max(val, FFTd[b].prev - dGap) * (res - barH) + barH)
-    FFTd[b].prev = val
+    local FFT = mFFT[b]:GetValue()
+    local dMin, dMax = mode and 0 or math.floor(math.min(FFT, FFTd[b].prev + dGap) * (res - barH)), math.floor((mode and FFT or math.max(FFT, FFTd[b].prev - dGap)) * (res - barH) + barH)
+    FFTd[b].prev = FFT
+    -- Cool entire band
     for i = 0, res do
       FFTd[b][i] = math.max(FFTd[b][i] - cool, 0)
     end
+    -- Heat delta range
     for i = dMin, dMax do
       FFTd[b][i] = math.min(FFTd[b][i] + heat, 1)
     end
     for i = 0, res do
+      -- Only set gradient if value differs from adjacent values
       if (i ~= 0 and FFTd[b][i - 1] ~= FFTd[b][i]) or (i ~= res and FFTd[b][i] ~= FFTd[b][i + 1]) or (i == 0 or i == res and FFTd[b][i] ~= 0) then
         grad[#grad + 1] = Preset(FFTd[b][i])..';'..((i + 1) / (res + 2))
       end
@@ -62,12 +66,12 @@ function ShowHover()
 end
 
 function ShowSettings()
-  SKIN:Bang('[!SetOption Handle W '..math.max(tonumber(SKIN:GetVariable('Width')), 216)..'][!SetOption Handle H '..math.max(tonumber(SKIN:GetVariable('Height')), 343)..'][!SetOptionGroup Label X 12][!MoveMeter 12 12 PresetLabel][!MoveMeter 66 12 PresetBG][!MoveMeter 83 112 ChannelBG][!ShowMeterGroup Set][!SetOption Hover SolidColor 00000001]')
+  SKIN:Bang('[!SetOption Handle W '..math.max(tonumber(SKIN:GetVariable('Width')), 216)..'][!SetOption Handle H '..math.max(tonumber(SKIN:GetVariable('Height')), 368)..'][!SetOptionGroup Label X 12][!MoveMeter 12 12 ModeLabel][!MoveMeter 66 37 PresetBG][!MoveMeter 83 137 ChannelBG][!ShowMeterGroup Set][!SetOption Hover SolidColor 00000001]')
 end
 
 function HideSettings()
   if isLocked then return end
-  SKIN:Bang('[!SetOptionGroup Label X -220][!MoveMeter -220 -350 PresetLabel][!MoveMeter -220 -350 PresetBG][!MoveMeter -220 -350 ChannelBG][!HideMeterGroup Set][!SetOption Hover SolidColor 00000001]')
+  SKIN:Bang('[!SetOptionGroup Label X -220][!MoveMeter -220 -350 ModeLabel][!MoveMeter -220 -350 PresetBG][!MoveMeter -220 -350 ChannelBG][!HideMeterGroup Set][!SetOption Hover SolidColor 00000001]')
 end
 
 function GenMeasures()
@@ -76,6 +80,12 @@ function GenMeasures()
     file:write('[mFFT'..b..']\nMeasure=Plugin\nPlugin=AudioLevel\nParent=mFFT0\nType=Band\nBandIdx='..b..'\nGroup=mFFT\n')
   end
   file:close()
+end
+
+function SetMode(n)
+  if n == (mode and 1 or 0) then return end
+  mode = n == 1
+  SKIN:Bang('[!SetOption Mode'..(n == 1 and 0 or 1)..' SolidColor 505050E0][!SetOption Mode'..(n == 1 and 0 or 1)..' MouseLeaveAction "!SetOption #*CURRENTSECTION*# SolidColor 505050E0"][!SetOption Mode'..(n == 1 and 1 or 0)..' SolidColor FF0000][!SetOption Mode'..(n == 1 and 1 or 0)..' MouseLeaveAction "!SetOption #*CURRENTSECTION*# SolidColor FF0000"][!WriteKeyValue Variables Mode '..n..' "#@#Settings.inc"]')
 end
 
 function LoadPreset(n)
@@ -109,11 +119,11 @@ end
 
 function SetHeat(n, m)
   if m then
-    heat = math.min((math.floor(m * 0.5) + 1) * 0.01, 0.5)
-  elseif 0.01 <= heat + n and heat + n <= 0.5 then
+    heat = math.min((math.floor(m * 0.5) + 1) * 0.02, 1)
+  elseif 0.02 <= heat + n and heat + n <= 1 then
     heat = math.floor((heat + n) * 100 + 0.5) * 0.01
   else return end
-  SKIN:Bang('[!SetOption HeatSlider X '..(heat * 200 - 2)..'r][!SetOption HeatVal Text '..(heat * 100)..'%][!WriteKeyValue Variables Heat '..heat..' "#@#Settings.inc"]')
+  SKIN:Bang('[!SetOption HeatSlider X '..(heat * 100 - 2)..'r][!SetOption HeatVal Text '..(heat * 100)..'%][!WriteKeyValue Variables Heat '..heat..' "#@#Settings.inc"]')
 end
 
 function SetCool(n, m)
