@@ -1,12 +1,12 @@
 function Initialize()
-  mFFT, FFTd, grad = {}, {}, {}
+  mFFT, FFTd = {}, {}
   mode = SKIN:GetVariable('Mode') == '1'
   heat = tonumber(SKIN:GetVariable('Heat')) -- growth rate of FFT values
   cool = tonumber(SKIN:GetVariable('Cool')) -- decay rate of FFT values
   bands = tonumber(SKIN:GetVariable('Bands')) -- number of FFT bands
   res = math.floor(tonumber(SKIN:GetVariable('Height')) / tonumber(SKIN:GetVariable('BlurH'))) - 2
   barH = tonumber(SKIN:GetVariable('BarH'))
-  dGap = (barH + 1) / (res - barH) -- makes multi-frame deltas exactly contiguous
+  dFill = (barH + 1) / (res - barH) -- filler to align multi-frame deltas contiguously
   scroll = 0 -- preset selection list scroll position
   isLocked = false -- lock hiding of mouseover controls
   if bands > 1 and not SKIN:GetMeasure('mFFT1') then
@@ -23,6 +23,7 @@ function Initialize()
   local barG = math.min(tonumber(SKIN:GetVariable('BarG')), width / (bands - 1) - blurW * 2)
   local barW = (width - barG * (bands - 1)) / bands
   local resMax = tonumber(SKIN:GetVariable('Height')) - 2
+  local grad = {}
   for b = 1, bands do
     mFFT[b], FFTd[b] = SKIN:GetMeasure('mFFT'..(b - 1)), {}
     for i = 0, resMax do
@@ -33,13 +34,18 @@ function Initialize()
     grad[b] = '00000000;'..((barW + barG) * (b - 1) / width)..'|000000;'..(((barW + barG) * (b - 1) + blurW) / width)..'|000000;'..(((barW + barG) * b - barG - blurW) / width)..'|00000000;'..(((barW + barG) * b - barG) / width)
   end
   SKIN:Bang('[!SetOption Mask Grad "0|'..table.concat(grad, '|')..'"][!SetOption Mode'..(mode and 1 or 0)..' SolidColor FF0000][!SetOption Mode'..(mode and 1 or 0)..' MouseLeaveAction "!SetOption #*CURRENTSECTION*# SolidColor FF0000"][!SetOption HeatSlider X '..(heat * 100 - 2)..'r][!SetOption HeatVal Text '..(heat * 100)..'%][!SetOption CoolSlider X '..(cool * 200 - 2)..'r][!SetOption CoolVal Text '..(cool * 100)..'%][!SetOption BarHSlider X '..(barH * 2)..'r][!SetOption BarGSlider X '..(barG * 2)..'r][!SetOption BlurWSlider X '..(blurW * 2)..'r][!SetOption BlurHSlider X '..(tonumber(SKIN:GetVariable('BlurH')) * 2 - 2)..'r][!SetOption SensSlider X '..(tonumber(SKIN:GetVariable('Sens')) * 0.9)..'r]')
+  if SKIN:GetVariable('ShowSet') == '1' then
+    ShowSettings()
+    SKIN:Bang('!WriteKeyValue Variables ShowSet 0 "#@#Settings.inc"')
+  end
   Update()
 end
 
 function Update()
+  local grad = {}
   for b = 1, bands do
-    local FFT = mFFT[b]:GetValue()
-    local dMin, dMax = mode and 0 or math.floor(math.min(FFT, FFTd[b].prev + dGap) * (res - barH)), math.floor((mode and FFT or math.max(FFT, FFTd[b].prev - dGap)) * (res - barH) + barH)
+    local FFT, gradLen = mFFT[b]:GetValue(), 1
+    local dMin, dMax = mode and 0 or math.floor(math.min(FFT, FFTd[b].prev + dFill) * (res - barH)), math.floor((mode and FFT or math.max(FFT, FFTd[b].prev - dFill)) * (res - barH) + barH)
     FFTd[b].prev = FFT
     -- Cool entire band
     for i = 0, res do
@@ -52,11 +58,12 @@ function Update()
     for i = 0, res do
       -- Only set gradient if value differs from adjacent values
       if (i ~= 0 and FFTd[b][i - 1] ~= FFTd[b][i]) or (i ~= res and FFTd[b][i] ~= FFTd[b][i + 1]) or (i == 0 or i == res and FFTd[b][i] ~= 0) then
-        grad[#grad + 1] = Preset(FFTd[b][i])..';'..((i + 1) / (res + 2))
+        grad[gradLen] = Preset(FFTd[b][i])..';'..((i + 1) / (res + 2))
+        gradLen = gradLen + 1
       end
     end
+    for i = #grad, gradLen, -1 do grad[i] = nil end
     SKIN:Bang('!SetOption', 'Render', 'Grad'..b, '90|'..Preset(0)..';0|'..table.concat(grad, '|')..'|'..Preset(0)..';1')
-    grad = {}
   end
 end
 
@@ -189,11 +196,12 @@ function SetVar(var, min)
   local blurW = math.min(tonumber(SKIN:GetVariable('BlurW')), width / (bands * 2))
   local barG = math.min(tonumber(SKIN:GetVariable('BarG')), width / (bands - 1) - blurW * 2)
   local barW = (width - barG * (bands - 1)) / bands
+  local grad = {}
   if var == 'Width' then
     SKIN:GetMeter('Hover'):SetW(width)
   elseif var == 'Height' then
     res = math.floor(height / tonumber(SKIN:GetVariable('BlurH'))) - 2
-    dGap = (barH + 1) / (res - barH)
+    dFill = (barH + 1) / (res - barH)
     for b = 1, bands do
       for i = 0, height - 2 do
         FFTd[b][i] = 0
@@ -214,7 +222,7 @@ function SetBarH(n, m)
   elseif 0 <= barH + n and barH + n <= 50 then
     barH = math.floor(barH + n + 0.5)
   else return end
-  dGap = (barH + 1) / (res - barH)
+  dFill = (barH + 1) / (res - barH)
   SKIN:Bang('[!SetOption BarHSlider X '..(barH * 2)..'r][!SetOption BarHVal Text '..barH..'][!WriteKeyValue Variables BarH '..barH..' "#@#Settings.inc"]')
 end
 
@@ -228,6 +236,7 @@ function SetBarG(n, m)
     barG = math.floor(barG + n + 0.5)
   else return end
   local barW = (width - barG * (bands - 1)) / bands
+  local grad = {}
   for b = 1, bands do
     SKIN:Bang('!SetOption Render Shape'..(b ~= 1 and b or '')..' "Rectangle '..((barW + barG) * (b - 1))..',0,'..barW..',#Height#|Fill LinearGradient Grad'..b..'|Extend Attr"')
     grad[b] = '00000000;'..((barW + barG) * (b - 1) / width)..'|000000;'..(((barW + barG) * (b - 1) + blurW) / width)..'|000000;'..(((barW + barG) * b - barG - blurW) / width)..'|00000000;'..(((barW + barG) * b - barG) / width)
@@ -245,6 +254,7 @@ function SetBlurW(n, m)
   else return end
   local barG = math.min(tonumber(SKIN:GetVariable('BarG')), width / (bands - 1) - blurW * 2)
   local barW = (width - barG * (bands - 1)) / bands
+  local grad = {}
   for b = 1, bands do
     SKIN:Bang('!SetOption Render Shape'..(b ~= 1 and b or '')..' "Rectangle '..((barW + barG) * (b - 1))..',0,'..barW..',#Height#|Fill LinearGradient Grad'..b..'|Extend Attr"')
     grad[b] = '00000000;'..((barW + barG) * (b - 1) / width)..'|000000;'..(((barW + barG) * (b - 1) + blurW) / width)..'|000000;'..(((barW + barG) * b - barG - blurW) / width)..'|00000000;'..(((barW + barG) * b - barG) / width)
